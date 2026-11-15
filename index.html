@@ -91,6 +91,17 @@ button:focus-visible { outline: 2px solid var(--honey); outline-offset: 2px; }
 /* sheet */
 #sheet { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); transform: translate(-50%, 115%); width: min(980px, calc(100vw - 20px)); border-radius: 22px; transition: transform .38s cubic-bezier(.2,.9,.25,1); display: flex; flex-direction: column; max-height: min(52vh, 470px); }
 #sheet.open { transform: translate(-50%, 0); }
+#sheet.compact .sh-head { padding-top: 10px; }
+#sheet.compact .sh-head .sub { display: none; }
+#sheet.compact .sh-body { padding-bottom: 12px; }
+body.layouting #orders, body.layouting #camCtl { display: none; }
+.lybar { display: flex; gap: 8px; align-items: stretch; }
+.lytool { flex: 1; min-height: 46px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid var(--line); color: var(--ink-2); font-weight: 800; font-size: 13.5px; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.lytool.on { background: var(--ink); color: #2a2018; border-color: var(--ink); }
+.lytool span { width: 16px; height: 16px; border-radius: 4px; display: inline-block; }
+.lytool .sw-wall { background: #9ee39a; } .lytool .sw-door { background: #ffe2a0; } .lytool .sw-erase { background: #f08a73; }
+.lydone { min-height: 46px; padding: 0 16px; }
+.lyinfo { font-size: 13px; color: var(--ink-2); margin-top: 9px; line-height: 1.35; min-height: 2.7em; }
 .sh-head { display: flex; align-items: center; gap: 12px; padding: 14px 14px 8px 18px; }
 .sh-head h2 { margin: 0; font: 800 21px/1.1 var(--f-display); letter-spacing: -.01em; }
 .sh-head .sub { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
@@ -213,6 +224,9 @@ button:focus-visible { outline: 2px solid var(--honey); outline-offset: 2px; }
 #gpad button { pointer-events: auto; width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
 #gpad button .ico { width: 26px; height: 26px; }
 #gpad .wide { width: auto; padding: 0 18px; }
+#gpad button.capb { width: min(82px, calc((100vw - 64px) / 4)); height: 74px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+#gpad button.capb .ico { width: 30px; height: 30px; }
+#gpad .cap { font-size: 11px; font-weight: 700; color: var(--ink-2); letter-spacing: .02em; }
 .gmsg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
 .gmsg .big { font: 800 min(120px, 24vw)/1 var(--f-display); color: #fff6e3; text-shadow: 0 6px 30px rgba(0,0,0,.5); animation: pop .5s cubic-bezier(.2,.9,.3,1.4); }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } }
@@ -7138,7 +7152,7 @@ function initInput(cv) {
     if (!d.moved && performance.now() - d.t < 900) G.onTap && G.onTap(p.x, p.y, e);
   };
   cv.addEventListener('pointerup', up);
-  cv.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = null; pinch = null; });
+  cv.addEventListener('pointercancel', e => { pts.delete(e.pointerId); if (drag && drag.mode === 'item') G.onDragEnd && G.onDragEnd(drag, true); drag = null; pinch = null; });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { e.preventDefault(); rig.dist = clamp(rig.dist * Math.exp(e.deltaY * .0012), 160, 2600); }, { passive: false });
   window.addEventListener('keydown', e => {
@@ -8388,6 +8402,17 @@ S.focusRoom = function (r) {
   if (Math.abs(az) > 1.1) R.az = Math.sign(az) * .55; // keep the room open toward the camera
 };
 S.toScreen = (x, y, z) => G.project(x, y, z);
+/* layout editing: look straight down on a whole floor; on a tall phone screen the barn's long side runs up the screen.
+   pad = screen px hidden at the bottom (the tool sheet) and top (the HUD) */
+S.layoutCam = function (level, padBottom = 170, padTop = 70) {
+  const L = BA.LEVELS[level], d = BA.state.levels[level], w = d.nx * 48, dz = d.nz * 48, R = G.rig;
+  const portrait = G.h > G.w * 1.05, az = portrait ? Math.PI / 2 : 0, el = 1.36;
+  const visH = Math.max(120, G.h - padBottom - padTop), vert = portrait ? w : dz, horiz = portrait ? dz : w;
+  const dist = Math.max((vert + 50) * G.h / visH, (horiz + 50) * G.h / G.w) / (2 * TAN) * 1.04;
+  const wpp = 2 * dist * TAN / G.h, shift = (padBottom - padTop) / 2 * wpp; // move the target so the barn sits in the visible band
+  R.az = az; R.el = el; R.dist = clamp(dist, 300, 2500); R.ty = B.levelY(level);
+  R.tx = L.x0 + w / 2 + Math.sin(az) * shift; R.tz = Math.cos(az) * shift;
+};
 
 /* ---------------- effects ---------------- */
 S.burst3 = (x, y, z, kind, n, col) => G.burst(x, y, z, kind, n, col);
@@ -8758,12 +8783,15 @@ function drawSheet() {
   el.querySelector('.x').onclick = () => { sfx.close(); closeSheet(); };
   el.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { sh.tab = b.dataset.tab; sfx.tap(); drawSheet(); el.querySelector('.sh-body').scrollTop = 0; });
   const body = el.querySelector('.sh-body');
+  el.classList.toggle('compact', sh.key === 'room' && sh.tab === 'Layout');
+  document.body.classList.toggle('layouting', sh.key === 'room' && sh.tab === 'Layout');
   sh.render(body, sh.tab);
   if (sh.keepScroll) body.scrollTop = scroll;
 }
 UI.redrawSheet = (keep = true) => { if (UI.sheet) { UI.sheet.keepScroll = keep; drawSheet(); } };
 function closeSheet() {
-  $('sheet').classList.remove('open'); $('dock').classList.remove('hide'); setDockOn(null);
+  if (UI.mode === 'layout' && S.layout && autoDoors(S.layout.level)) { UI.toast('Added a doorway so every room has a way in.'); BA.save(); }
+  $('sheet').classList.remove('open', 'compact'); document.body.classList.remove('layouting'); $('dock').classList.remove('hide'); setDockOn(null);
   if (UI.sheet && UI.sheet.key === 'room') { S.roomHi = null; S.layout = null; S.layoutPreview = null; }
   UI.sheet = null;
 }
@@ -8991,8 +9019,8 @@ S.handlers.dragStart = (sx, sy) => {
   }
   return false;
 };
-S.handlers.dragMove = (sx, sy) => { if (UI.mode === 'place') moveGhostTo(sx, sy, grab); else if (UI.mode === 'layout' && layoutDrag) { const n = layoutNode(sx, sy); if (n) { layoutDrag.n1 = n; S.layoutPreview = layoutRun(layoutDrag); } } };
-S.handlers.dragEnd = (d, cancel) => { grab = null; if (layoutDrag) { const run = cancel ? [] : layoutRun(layoutDrag); layoutDrag = null; S.layoutPreview = null; if (run.length) applyLayout(run); } };
+S.handlers.dragMove = (sx, sy) => { if (UI.mode === 'place') moveGhostTo(sx, sy, grab); else if (UI.mode === 'layout' && layoutDrag) { const n = layoutNode(sx, sy); if (n) { layoutDrag.n1 = n; S.layoutPreview = layoutRun(layoutDrag); layoutInfo(runInfo(S.layoutPreview)); } } };
+S.handlers.dragEnd = (d, cancel) => { grab = null; if (layoutDrag) { const run = cancel ? [] : layoutRun(layoutDrag); layoutDrag = null; S.layoutPreview = null; layoutInfo(); if (run.length) applyLayout(run); } };
 UI.personTap = function (p, tipOnly) {
   if (p.tip) { const amt = p.tip.amt; p.tip = null; sfx.coin(); const wp = BA.people.worldPos(p); UI.earn(amt, { x: wp.x, y: wp.y + 70, z: wp.z }); return; }
   if (!tipOnly) talkTo(p);
@@ -9053,7 +9081,7 @@ function openRoom(r, tab) {
   openSheet('room', rt ? rt.name : 'Open Space', roomSub(r), ['Room', 'Floor', 'Walls', 'Layout'], tab || 'Room', (body, t) => {
     const room = curRoom() || r; S.roomHi = room;
     const n = room.n, Ly = B3.levelY(room.level);
-    if (t !== 'Layout') { S.layout = null; S.layoutHover = null; if (UI.mode === 'layout') UI.mode = 'room'; }
+    if (t !== 'Layout') { const was = UI.mode === 'layout'; S.layout = null; S.layoutHover = null; S.layoutPreview = null; if (was) { UI.mode = 'room'; S.focusRoom(room); } }
     if (t === 'Room') {
       const miss = BA.roomMissing(s, room), min = BA.ROOM_MIN(room.cell.type);
       body.innerHTML = `<div class="lbl">What is this room?</div><div class="chips">${BA.ROOM_TYPES.map(t2 => `<button class="chip ${room.cell.type === t2.id ? 'on' : ''}" data-type="${t2.id}">${t2.name}</button>`).join('')}<button class="chip ${!room.cell.type ? 'on' : ''}" data-type="">Open space</button></div>
@@ -9086,11 +9114,14 @@ function openRoom(r, tab) {
       body.querySelectorAll('[data-paper]').forEach(b => b.onclick = () => { if (fin.paper === b.dataset.paper) return; if (!UI.spend(wc)) return; BA.setRoomProp(s, room, 'wall', { ...fin, paper: b.dataset.paper }); sfx.paint(); UI.refresh(); BA.save(); UI.redrawSheet(); });
     }
     if (t === 'Layout') {
+      const first = UI.mode !== 'layout' || !S.layout || S.layout.level !== room.level;
       UI.mode = 'layout'; S.layout = { level: room.level };
-      if (!UI.layoutSeen) { UI.layoutSeen = true; const R = G3.rig; R.el = Math.max(R.el, .95); }
-      body.innerHTML = `<div class="note"><b>Drag along the grid</b> to draw a wall, ${BA.money(WALL_COST)} a section. Drag over an existing wall to take it down. <b>Tap a wall</b> to give it a doorway, and tap again to remove it.<br><br>Each square is about five feet. A kitchen wants ${BA.ROOM_MIN('kitchen')} squares, a bathroom ${BA.ROOM_MIN('bath')}, a bedroom ${BA.ROOM_MIN('bedroom')}. Drag outside the barn, or use two fingers, to turn the view.</div>
-        <div class="row" style="margin-top:10px;gap:8px"><button class="btn" id="lyDoorAll">Add doorways to closed rooms</button></div>`;
-      body.querySelector('#lyDoorAll').onclick = () => { const k = autoDoors(room.level); if (k) { sfx.hammer(); UI.toast(`Added ${k} doorway${k > 1 ? 's' : ''}.`); BA.save(); UI.refresh(); } else UI.toast('Every room already has a way in.'); };
+      if (first) S.layoutCam(room.level, BA.isTouch || G3.w < 700 ? 200 : 190, 70);
+      const tool = UI.layoutTool || 'wall', tb = (id, ic, nm) => `<button class="lytool ${tool === id ? 'on' : ''}" data-tool="${id}"><span class="sw-${id}"></span>${nm}</button>`;
+      body.innerHTML = `<div class="lybar">${tb('wall', '', 'Wall')}${tb('door', '', 'Doorway')}${tb('erase', '', 'Remove')}<button class="btn lydone" id="lyDone">Done</button></div>
+        <div class="lyinfo" id="lyInfo">${layoutHelp()}</div>`;
+      body.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => { UI.layoutTool = b.dataset.tool; sfx.tap(); UI.redrawSheet(); });
+      body.querySelector('#lyDone').onclick = () => { sfx.tap(); autoDoors(room.level) && UI.toast('Added a doorway so every room has a way in.'); BA.save(); UI.sheet.tab = 'Room'; UI.redrawSheet(false); };
     }
   });
 }
@@ -9106,15 +9137,28 @@ function layoutNode(sx, sy) {
   if (fx < -.6 || fz < -.6 || fx > d.nx + .6 || fz > d.nz + .6) return null;
   return { I: clamp(Math.round(fx), 0, d.nx), J: clamp(Math.round(fz), 0, d.nz) };
 }
+function layoutHelp() {
+  const tool = UI.layoutTool || 'wall';
+  return tool === 'wall' ? `<b>Drag along the grid</b> to draw a wall, or tap a grid line for one section. ${BA.money(WALL_COST)} a section.`
+    : tool === 'door' ? '<b>Tap a wall</b> to cut a doorway in it. Tap a doorway to close it up again.'
+    : '<b>Tap or drag over</b> walls and doorways to take them down.';
+}
+function layoutInfo(html) { const el = document.getElementById('lyInfo'); if (el) el.innerHTML = html || layoutHelp(); }
 function layoutRun(dr) {
   const lv = S.layout.level, d = BA.state.levels[lv], { n0, n1 } = dr, di = n1.I - n0.I, dj = n1.J - n0.J, out = [];
   if (!di && !dj) return out;
   if (Math.abs(di) >= Math.abs(dj)) { const J = n0.J; if (J <= 0 || J >= d.nz) return out; for (let i = Math.min(n0.I, n1.I); i < Math.max(n0.I, n1.I); i++) out.push({ k: 'z', i, j: J - 1 }); }
   else { const I = n0.I; if (I <= 0 || I >= d.nx) return out; for (let j = Math.min(n0.J, n1.J); j < Math.max(n0.J, n1.J); j++) out.push({ k: 'x', i: I - 1, j }); }
+  const tool = UI.layoutTool || 'wall', v = e => BA.edgeVal(d, e.k, e.i, e.j);
   const run = out.filter(e => !BA.edgeLocked(lv, e.k, e.i, e.j));
-  if (!run.length) return run;
-  const mode = BA.edgeVal(d, run[0].k, run[0].i, run[0].j) ? 'rm' : 'add';
-  return run.map(e => ({ ...e, mode }));
+  if (tool === 'wall') return run.filter(e => !v(e)).map(e => ({ ...e, mode: 'add' }));
+  if (tool === 'door') return run.filter(e => v(e) === 1).map(e => ({ ...e, mode: 'door' }));
+  return run.filter(e => v(e)).map(e => ({ ...e, mode: 'rm' }));
+}
+function runInfo(run) {
+  if (!run.length) return layoutHelp();
+  const n = run.length, m = run[0].mode;
+  return m === 'add' ? `<b>${n} section${n > 1 ? 's' : ''} of wall</b> · ${BA.money(WALL_COST * n)}. Lift your finger to build.` : m === 'door' ? `<b>${n} doorway${n > 1 ? 's' : ''}</b>. Lift your finger to cut.` : `<b>Take down ${n} section${n > 1 ? 's' : ''}</b>. Lift your finger to remove.`;
 }
 function edgeBlocker(lv, e) {
   const s = BA.state, g = BA.edgeSeg(lv, e.k, e.i, e.j), rect = { x0: Math.min(g.x0, g.x1) - 3.5, x1: Math.max(g.x0, g.x1) + 3.5, z0: Math.min(g.z0, g.z1) - 3.5, z1: Math.max(g.z0, g.z1) + 3.5 };
@@ -9122,39 +9166,41 @@ function edgeBlocker(lv, e) {
   return s.items.find(it => { if (it.level !== lv) return false; const d = BA.ITEM[it.id]; if (d.kind === 'ceil' || d.kind === 'wall') return false; return BA.overlap(BA.foot(it, d), rect, .5); });
 }
 function applyLayout(run) {
-  const s = BA.state, lv = S.layout.level, d = s.levels[lv];
-  if (run[0].mode === 'add') {
-    const add = run.filter(e => !BA.edgeVal(d, e.k, e.i, e.j));
-    for (const e of add) { const b = edgeBlocker(lv, e); if (b) { sfx.error(); UI.toast(`Move the ${BA.ITEM[b.id].name} out of the way first.`, true); return; } }
-    if (!add.length) return;
-    if (!UI.spend(WALL_COST * add.length)) return;
-    add.forEach(e => BA.setEdge(d, e.k, e.i, e.j, 1)); sfx.hammer(); if (add.length > 2) setTimeout(() => sfx.hammer(), 220);
-    add.forEach((e, n) => { if (n % 2) return; const g = BA.edgeSeg(lv, e.k, e.i, e.j); S.burst3((g.x0 + g.x1) / 2, B3.levelY(lv) + 40, (g.z0 + g.z1) / 2, 'dust', 6); });
-    if (autoDoors(lv)) UI.toast('Added a doorway so people can still get in. Tap a wall to move or change it.');
-  } else {
-    run.forEach(e => BA.setEdge(d, e.k, e.i, e.j, 0)); sfx.sweep(); normalizeRooms(lv);
-  }
+  const s = BA.state, lv = S.layout.level, d = s.levels[lv], m = run[0].mode;
+  if (m === 'add') {
+    for (const e of run) { const b = edgeBlocker(lv, e); if (b) { sfx.error(); UI.toast(`Move the ${BA.ITEM[b.id].name} out of the way first.`, true); return; } }
+    if (!UI.spend(WALL_COST * run.length)) return;
+    run.forEach(e => BA.setEdge(d, e.k, e.i, e.j, 1)); sfx.hammer(); if (run.length > 2) setTimeout(() => sfx.hammer(), 220);
+    run.forEach((e, n) => { if (n % 2) return; const g = BA.edgeSeg(lv, e.k, e.i, e.j); S.burst3((g.x0 + g.x1) / 2, B3.levelY(lv) + 40, (g.z0 + g.z1) / 2, 'dust', 6); });
+  } else if (m === 'door') { run.forEach(e => BA.setEdge(d, e.k, e.i, e.j, 2)); sfx.saw ? sfx.saw() : sfx.hammer(); }
+  else { run.forEach(e => BA.setEdge(d, e.k, e.i, e.j, 0)); sfx.sweep(); normalizeRooms(lv); }
   layoutChanged();
 }
-function layoutTap(sx, sy) {
-  const s = BA.state, lv = S.layout.level, L = BA.LEVELS[lv], d = s.levels[lv], p = layoutPoint(sx, sy); if (!p) return false;
-  const fx = (p.x - L.x0) / 48, fz = (p.z + HD) / 48;
-  if (fx < -.3 || fz < -.3 || fx > d.nx + .3 || fz > d.nz + .3) return false;
-  // nearest inner edge
-  let best = null, bd = 16;
-  const consider = (k, i, j) => { if (BA.edgeLocked(lv, k, i, j)) return; const g = BA.edgeSeg(lv, k, i, j); const dist = k === 'x' ? (Math.abs(p.x - g.x0) + Math.max(0, g.z0 - p.z, p.z - g.z1)) : (Math.abs(p.z - g.z0) + Math.max(0, g.x0 - p.x, p.x - g.x1)); if (dist < bd) { bd = dist; best = { k, i, j }; } };
+// nearest editable grid line to a screen point, measured on screen so it works at any zoom or angle
+function nearEdge(sx, sy) {
+  const lv = S.layout.level, d = BA.state.levels[lv], y = B3.levelY(lv); let best = null, bd = BA.isTouch ? 26 : 16;
+  const consider = (k, i, j) => {
+    if (BA.edgeLocked(lv, k, i, j)) return; const g = BA.edgeSeg(lv, k, i, j);
+    const a = G3.project(g.x0, y, g.z0), b = G3.project(g.x1, y, g.z1), vx = b.x - a.x, vy = b.y - a.y, L2 = vx * vx + vy * vy || 1;
+    const u = clamp(((sx - a.x) * vx + (sy - a.y) * vy) / L2, 0, 1), dd = Math.hypot(a.x + vx * u - sx, a.y + vy * u - sy);
+    if (dd < bd) { bd = dd; best = { k, i, j }; }
+  };
   for (let j = 0; j < d.nz; j++) for (let i = 0; i < d.nx - 1; i++) consider('x', i, j);
   for (let j = 0; j < d.nz - 1; j++) for (let i = 0; i < d.nx; i++) consider('z', i, j);
+  return best;
+}
+function layoutTap(sx, sy) {
+  const s = BA.state, lv = S.layout.level, d = s.levels[lv], p = layoutPoint(sx, sy); if (!p) return false;
+  const best = nearEdge(sx, sy), tool = UI.layoutTool || 'wall';
   if (!best) { // tapped inside a room: switch the sheet to that room
-    const r = BA.roomAt(s, lv, p.x, p.z); if (r) { UI.roomCell = { level: lv, k: r.cells[0] }; S.roomHi = r; layoutChanged(true); sfx.tap(); }
-    return true;
+    const r = BA.roomAt(s, lv, p.x, p.z); if (!r) return false;
+    UI.roomCell = { level: lv, k: r.cells[0] }; S.roomHi = r; layoutChanged(true); sfx.tap(); return true;
   }
-  const v = BA.edgeVal(d, best.k, best.i, best.j);
-  if (v === 0) { const b = edgeBlocker(lv, best); if (b) { sfx.error(); UI.toast(`Move the ${BA.ITEM[b.id].name} out of the way first.`, true); return true; } if (!UI.spend(WALL_COST)) return true; BA.setEdge(d, best.k, best.i, best.j, 1); sfx.hammer(); }
-  else if (v === 1) { BA.setEdge(d, best.k, best.i, best.j, 2); sfx.saw ? sfx.saw() : sfx.hammer(); }
-  else { BA.setEdge(d, best.k, best.i, best.j, 0); sfx.sweep(); normalizeRooms(lv); }
-  const g = BA.edgeSeg(lv, best.k, best.i, best.j); S.burst3((g.x0 + g.x1) / 2, B3.levelY(lv) + 40, (g.z0 + g.z1) / 2, 'dust', 8);
-  layoutChanged();
+  const v = BA.edgeVal(d, best.k, best.i, best.j), e = { ...best };
+  if (tool === 'wall') { if (v) { UI.toast(v === 2 ? 'That\'s a doorway. Pick Doorway to close it.' : 'There\'s already a wall there.'); return true; } applyLayout([{ ...e, mode: 'add' }]); }
+  else if (tool === 'door') { if (!v) { UI.toast('Draw a wall there first.'); return true; } if (v === 1) applyLayout([{ ...e, mode: 'door' }]); else { BA.setEdge(d, e.k, e.i, e.j, 1); sfx.hammer(); layoutChanged(); } }
+  else { if (!v) return true; applyLayout([{ ...e, mode: 'rm' }]); }
+  if (tool !== 'erase' || v) { const g = BA.edgeSeg(lv, e.k, e.i, e.j); S.burst3((g.x0 + g.x1) / 2, B3.levelY(lv) + 40, (g.z0 + g.z1) / 2, 'dust', 8); }
   return true;
 }
 function layoutChanged(quiet) {
@@ -9701,7 +9747,7 @@ function buildHud() {
 }
 function buildPad() {
   const pad = BA.isTouch ? (G.inst.pad || []) : [];
-  $('gpad').innerHTML = pad.map(p => `<button class="glass ${p.wide ? 'wide' : ''}" data-pad="${p.id}" aria-label="${p.label || p.id}">${p.icon ? BA.ui.icon(p.icon) : ''}${p.text || ''}</button>`).join('');
+  $('gpad').innerHTML = pad.map(p => `<button class="glass ${p.wide ? 'wide' : ''} ${p.cap ? 'capb' : ''}" data-pad="${p.id}" aria-label="${p.label || p.id}">${p.icon ? BA.ui.icon(p.icon) : ''}${p.text || ''}${p.cap ? `<span class="cap">${p.label}</span>` : ''}</button>`).join('');
   $('gpad').querySelectorAll('[data-pad]').forEach(b => {
     const id = b.dataset.pad;
     b.addEventListener('pointerdown', e => { e.preventDefault(); if (G.phase === 'play') G.inst.padPress(id, true); });
@@ -10126,7 +10172,7 @@ function generate(T, rnd) {
     const colEvents = Array.from({ length: T.cols }, () => []);
     const left = Array(T.cols).fill(T.rows);
     const stockSeq = [];
-    let cur = deck.shift(), first = cur, placed = 0, ok = true, sinceDraw = 0;
+    let cur = deck.shift(), first = cur, placed = 0, ok = true, sinceDraw = 0; const path = [];
     while (placed < total) {
       const wantDraw = stockSeq.length < stockN && sinceDraw > 2 && rnd() < (stockN - stockSeq.length) / (total - placed + 1) * .9;
       const opts = [];
@@ -10134,16 +10180,16 @@ function generate(T, rnd) {
       const cols = left.map((n, i) => n > 0 ? i : -1).filter(i => i >= 0);
       if (!opts.length || wantDraw) {
         if (stockSeq.length >= stockN) { ok = false; break; }
-        const c = deck.splice(Math.floor(rnd() * deck.length), 1)[0]; stockSeq.push(c); cur = c; sinceDraw = 0; continue;
+        const c = deck.splice(Math.floor(rnd() * deck.length), 1)[0]; stockSeq.push(c); path.push('S'); cur = c; sinceDraw = 0; continue;
       }
       const r = rnd.pick(opts), col = rnd.pick(cols), c = take(r);
-      colEvents[col].push(c); left[col]--; placed++; cur = c; sinceDraw++;
+      colEvents[col].push(c); path.push(col); left[col]--; placed++; cur = c; sinceDraw++;
     }
     if (!ok) continue;
     // remaining deck goes to the end of the stock
     while (stockSeq.length < stockN) stockSeq.push(deck.splice(Math.floor(rnd() * deck.length), 1)[0]);
     const cols = colEvents.map(ev => ev.slice().reverse()); // top(back) -> front
-    return { cols, stock: stockSeq, waste: [first] };
+    return { cols, stock: stockSeq, waste: [first], path };
   }
   return null;
 }
@@ -10212,16 +10258,17 @@ function drawCard(ctx, c, x, y, w, h, o = {}) {
   else { ctx.strokeStyle = 'rgba(80,60,40,.28)'; ctx.lineWidth = 1; rr(ctx, x, y, w, h, w * .1); ctx.stroke(); }
   const col = RED[c.s] ? '#b8432f' : '#2a2724';
   ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  const fs = w * .28;
+  const ten = c.r === 10, fs = w * (ten ? .34 : .4);
   ctx.font = `800 ${fs}px ${BA.FONT_UI}`;
-  ctx.fillText(RANK[c.r], x + w * .08, y + h * .05);
-  const rw = ctx.measureText(RANK[c.r]).width;
-  suitPath(ctx, c.s, x + w * .08 + rw + w * .1, y + h * .05 + fs * .5, w * .02);
+  if (ten) { ctx.save(); ctx.translate(x + w * .06, y + h * .04); ctx.scale(.86, 1); ctx.fillText(RANK[c.r], 0, 0); ctx.restore(); }
+  else ctx.fillText(RANK[c.r], x + w * .08, y + h * .04);
+  const rw = ctx.measureText(RANK[c.r]).width * (ten ? .86 : 1);
+  suitPath(ctx, c.s, Math.min(x + w * .88, x + w * .08 + rw + w * .14), y + h * .04 + fs * .5, w * .026);
   // center pip / face mark
   if (c.r > 10) { ctx.fillStyle = rgba(col, .1); rr(ctx, x + w * .22, y + h * .3, w * .56, h * .5, w * .06); ctx.fill(); ctx.fillStyle = col; ctx.font = `700 ${w * .42}px ${BA.FONT_UI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(RANK[c.r], x + w / 2, y + h * .56); }
   else suitPath(ctx, c.s, x + w * .58, y + h * .6, w * .055);
   // mirrored index bottom-right
-  ctx.save(); ctx.translate(x + w, y + h); ctx.rotate(Math.PI); ctx.fillStyle = col; ctx.font = `800 ${fs * .8}px ${BA.FONT_UI}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(RANK[c.r], w * .08, h * .05); ctx.restore();
+  ctx.save(); ctx.translate(x + w, y + h); ctx.rotate(Math.PI); ctx.fillStyle = col; ctx.font = `800 ${fs * .62}px ${BA.FONT_UI}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(RANK[c.r], w * .08, h * .05); ctx.restore();
   // soft sheen
   const sh = ctx.createLinearGradient(x, y, x + w, y + h); sh.addColorStop(0, 'rgba(255,255,255,.35)'); sh.addColorStop(.4, 'rgba(255,255,255,0)'); ctx.fillStyle = sh; rr(ctx, x, y, w, h, w * .1); ctx.fill();
   if (o.dim) { ctx.fillStyle = 'rgba(40,30,20,.14)'; rr(ctx, x, y, w, h, w * .1); ctx.fill(); }
@@ -10249,37 +10296,50 @@ BA.jobs.register({
     const hist = [];
     let L = {}, anims = [], streak = 0, shake = 0, hintCol = null, hintT = 0, stuckShown = false;
     const layout = (w, h) => {
-      const top = 84, padX = 16;
-      const cw = Math.min(118, (w - padX * 2 - 68) / (T.cols + (T.cols - 1) * .14));
-      const chh = cw * 1.4;
-      const gap = cw * .14;
+      // fill the screen: narrow phones get edge-to-edge cards, and buried cards show a tall strip so their rank reads clearly
+      const narrow = w < 600, top = narrow ? 74 : 84, padX = narrow ? 10 : 16, gr = narrow ? .07 : .14;
+      const byW = (w - padX * 2 - (narrow ? 0 : 68)) / (T.cols + (T.cols - 1) * gr);
+      const byH = (h - top - 150) / (1.4 * 2 + .42 * (T.rows - 1));
+      const cw = Math.max(36, Math.min(118, byW, byH));
+      const chh = cw * 1.4, gap = cw * gr;
       const totalW = T.cols * cw + (T.cols - 1) * gap;
-      let ov = Math.min(chh * .3, (h - top - chh * 2.3 - 30) / (T.rows - 1 + .001));
-      ov = Math.max(chh * .16, ov);
-      L = { cw, ch: chh, gap, x0: (w - totalW) / 2, y0: top + 10, ov, bottomY: Math.min(h - chh - 26, top + 10 + chh + ov * (T.rows - 1) + chh * .5) };
+      const room = h - top - chh * 2 - 110;
+      let ov = Math.min(chh * .46, room / (T.rows - 1 + .001));
+      ov = Math.max(chh * .3, ov);
+      const tabBottom = top + 10 + chh + ov * (T.rows - 1);
+      // the draw pile and the card you play onto get bigger when there is spare height (phones in portrait)
+      const bw = Math.max(cw, Math.min(cw * 1.7, 120, (h - tabBottom - 120) / 1.4, (w - 60) / 2.4)), bh = bw * 1.4;
+      L = { cw, ch: chh, bw, bh, gap, x0: (w - totalW) / 2, y0: top + 10, ov, bottomY: Math.min(h - bh - 60, tabBottom + Math.max(chh * .35, Math.min(70, (h - tabBottom - bh - 60) * .45))) };
+      // centre the whole table in any spare height so it doesn't hug the top of a tall phone
+      const used = L.bottomY + bh + 50 - L.y0, spare = h - top - 30 - used;
+      if (spare > 20) { const sh = Math.min(spare / 2, 120); L.y0 += sh; L.bottomY += sh; }
     };
     const colPos = (c, i) => ({ x: L.x0 + c * (L.cw + L.gap), y: L.y0 + i * L.ov });
-    const wastePos = () => ({ x: api.w / 2 + L.gap / 2 + 8, y: L.bottomY });
-    const stockPos = () => ({ x: api.w / 2 - L.cw - L.gap / 2 - 8, y: L.bottomY });
+    const wastePos = () => ({ x: api.w / 2 + L.gap / 2 + 10, y: L.bottomY });
+    const stockPos = () => ({ x: api.w / 2 - L.bw - L.gap / 2 - 10, y: L.bottomY });
+    // the deal is built from a winning line; while the player is still on it, hints come straight from it
+    const known = () => { const P = g.path; if (!P || hist.length >= P.length) return null; for (let i = 0; i < hist.length; i++) if ((hist[i].t === 's' ? 'S' : hist[i].c) !== P[i]) return null; return P[hist.length]; };
     const canPlay = c => { const col = st.cols[c]; return col.length && adj(col[col.length - 1].r, st.top.r, T.wrap); };
     const anyMove = () => st.cols.some((_, c) => canPlay(c)) || st.si < st.stock.length;
     function play(c) {
       const col = st.cols[c], card = col[col.length - 1], from = colPos(c, col.length - 1);
       hist.push({ t: 'c', c }); col.pop(); st.waste.push(card); st.top = card; streak++;
-      anims.push({ card, fx: from.x, fy: from.y, t: 0, land: true }); api.sfx.card(); if (streak >= 3) api.sfx.pop(Math.min(6, streak - 2));
-      if (streak >= 4 && streak % 2 === 0) api.float(wastePos().x + L.cw / 2, wastePos().y - 10, `${streak} in a row!`, '#f2d27c');
+      anims.push({ card, fx: from.x, fy: from.y, fw: L.cw, t: 0, land: true }); api.sfx.card(); if (streak >= 3) api.sfx.pop(Math.min(6, streak - 2));
+      if (streak >= 4 && streak % 2 === 0) api.float(wastePos().x + L.bw / 2, wastePos().y - 10, `${streak} in a row!`, '#f2d27c');
       hintCol = null;
       if (st.cols.every(x => !x.length)) api.win();
     }
     function draw() {
       if (st.si >= st.stock.length) return;
       const card = st.stock[st.si++]; hist.push({ t: 's' }); st.waste.push(card); st.top = card; streak = 0;
-      const f = stockPos(); anims.push({ card, fx: f.x, fy: f.y, t: 0, flip: true }); api.sfx.whoosh(); hintCol = null;
+      const f = stockPos(); anims.push({ card, fx: f.x, fy: f.y, fw: L.bw, t: 0, flip: true }); api.sfx.whoosh(); hintCol = null;
     }
     return {
       resize: layout,
+      _next() { const k = known(); const sol = k != null ? [k] : solve({ cols: st.cols, stock: st.stock, si: st.si, top: st.top }, T.wrap); if (!sol || !sol.length) return null; const m = sol[0]; if (m === 'S') { const p = stockPos(); return { x: p.x + L.bw / 2, y: p.y + L.bh / 2 }; } const c = st.cols[m], p = colPos(m, c.length - 1); return { x: p.x + L.cw / 2, y: p.y + L.ch * .6 }; },
       undo() { const h = hist.pop(); if (!h) return; const card = st.waste.pop(); st.top = st.waste[st.waste.length - 1]; if (h.t === 'c') st.cols[h.c].push(card); else st.si--; streak = 0; anims = []; api.sfx.slide(); stuckShown = false; },
       hint() {
+        const k = known(); if (k != null) { hintCol = k; hintT = 2.5; return true; }
         const sol = solve({ cols: st.cols, stock: st.stock, si: st.si, top: st.top }, T.wrap);
         if (sol && sol.length) { hintCol = sol[0]; hintT = 2.5; return true; }
         api.float(api.w / 2, api.h / 2, sol === false ? 'No way out from here. Try Undo.' : 'Keep going!', '#ffd7a0'); return false;
@@ -10291,18 +10351,18 @@ BA.jobs.register({
           const p = colPos(c, col.length - 1);
           if (x >= p.x && x <= p.x + L.cw && y >= L.y0 && y <= p.y + L.ch) { if (canPlay(c)) play(c); else { shake = .3; api.sfx.error(); streak = 0; api.fx.kick(5); } return; }
         }
-        const sp = stockPos(); if (x >= sp.x - 10 && x <= sp.x + L.cw + 10 && y >= sp.y - 10 && y <= sp.y + L.ch + 10) draw();
+        const sp = stockPos(); if (x >= sp.x - 14 && x <= sp.x + L.bw + 14 && y >= sp.y - 14 && y <= sp.y + L.bh + 14) draw();
       },
       key(e, down) { if (!down) return; if (e.key === ' ' || e.key === 'Enter') { draw(); return true; } const n = parseInt(e.key); if (n >= 1 && n <= T.cols && canPlay(n - 1)) { play(n - 1); return true; } if ((e.key === 'z' || e.key === 'Backspace')) { this.undo(); return true; } },
       update(dt, playing) {
-        anims.forEach(a => { a.t += dt * 4.2; if (a.t >= 1 && a.land) { const wp = wastePos(); api.fx.burst(wp.x + L.cw / 2, wp.y + L.ch / 2, { kind: 'dust', n: 6, col: '#e8d39a', w: L.cw, h: L.ch * .6 }); if (streak >= 3) { api.fx.burst(wp.x + L.cw / 2, wp.y + L.ch * .4, { n: 6 + streak * 2, speed: .8 }); api.fx.ring(wp.x + L.cw / 2, wp.y + L.ch / 2, '#ffd98a', L.cw * (.8 + Math.min(streak, 8) * .08)); } } }); anims = anims.filter(a => a.t < 1);
+        anims.forEach(a => { a.t += dt * 4.2; if (a.t >= 1 && a.land) { const wp = wastePos(); api.fx.burst(wp.x + L.bw / 2, wp.y + L.bh / 2, { kind: 'dust', n: 6, col: '#e8d39a', w: L.bw, h: L.bh * .6 }); if (streak >= 3) { api.fx.burst(wp.x + L.bw / 2, wp.y + L.bh * .4, { n: 6 + streak * 2, speed: .8 }); api.fx.ring(wp.x + L.bw / 2, wp.y + L.bh / 2, '#ffd98a', L.bw * (.8 + Math.min(streak, 8) * .08)); } } }); anims = anims.filter(a => a.t < 1);
         shake = Math.max(0, shake - dt); hintT = Math.max(0, hintT - dt);
         if (playing && !anyMove() && !stuckShown) { stuckShown = true; api.float(api.w / 2, L.bottomY - 30, 'Stuck! Undo a few moves.', '#ffb8a0'); }
       },
       draw(ctx, w, h) {
         if (!L.cw) layout(w, h);
         BA.jobs.stage(ctx, w, h, 'hay', api.t);
-        { const tw = T.cols * L.cw + (T.cols - 1) * L.gap; BA.jobs.tray(ctx, L.x0 - 18, L.y0 - 18, tw + 36, L.bottomY + L.ch + (st.stock.length - st.si > 0 ? 44 : 30) - L.y0 + 18, 'felt', { r: 16 }); }
+        { const tw = T.cols * L.cw + (T.cols - 1) * L.gap; BA.jobs.tray(ctx, L.x0 - 18, L.y0 - 18, tw + 36, L.bottomY + L.bh + (st.stock.length - st.si > 0 ? 44 : 30) - L.y0 + 18, 'felt', { r: 16 }); }
         // columns
         for (let c = 0; c < T.cols; c++) {
           const p0 = colPos(c, 0);
@@ -10318,18 +10378,18 @@ BA.jobs.register({
         // stock & waste
         const sp = stockPos(), wp = wastePos();
         const left = st.stock.length - st.si;
-        if (left > 0) { for (let k = Math.min(3, left) - 1; k >= 0; k--) drawCard(ctx, null, sp.x - k * 2, sp.y - k * 2, L.cw, L.ch, { back: true }); ctx.fillStyle = '#f5ede1'; ctx.font = `800 13px ${BA.FONT_UI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(left + ' left', sp.x + L.cw / 2, sp.y + L.ch + 18); if (hintCol === 'S' && hintT > 0) { ctx.strokeStyle = '#e9b949'; ctx.lineWidth = 3; rr(ctx, sp.x - 3, sp.y - 3, L.cw + 6, L.ch + 6, 10); ctx.stroke(); } }
-        else { ctx.strokeStyle = 'rgba(255,240,210,.18)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); rr(ctx, sp.x, sp.y, L.cw, L.ch, L.cw * .1); ctx.stroke(); ctx.setLineDash([]); }
+        if (left > 0) { for (let k = Math.min(3, left) - 1; k >= 0; k--) drawCard(ctx, null, sp.x - k * 2, sp.y - k * 2, L.bw, L.bh, { back: true }); ctx.fillStyle = '#f5ede1'; ctx.font = `800 14px ${BA.FONT_UI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(left + ' left · tap to draw', sp.x + L.bw / 2, sp.y + L.bh + 19); if (hintCol === 'S' && hintT > 0) { ctx.strokeStyle = '#e9b949'; ctx.lineWidth = 3; rr(ctx, sp.x - 3, sp.y - 3, L.bw + 6, L.bh + 6, 10); ctx.stroke(); } }
+        else { ctx.strokeStyle = 'rgba(255,240,210,.18)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]); rr(ctx, sp.x, sp.y, L.bw, L.bh, L.bw * .1); ctx.stroke(); ctx.setLineDash([]); }
         const animCards = new Set(anims.map(a => a.card));
         const under = st.waste.filter(c => !animCards.has(c));
-        if (under.length > 1) drawCard(ctx, under[under.length - 2], wp.x - 3, wp.y + 2, L.cw, L.ch);
-        if (under.length) drawCard(ctx, under[under.length - 1], wp.x, wp.y, L.cw, L.ch);
-        anims.forEach(a => { const k = BA.ease.out(Math.min(1, a.t)); const x = lerp(a.fx, wp.x, k), y = lerp(a.fy, wp.y, k) - Math.sin(k * Math.PI) * 30; drawCard(ctx, a.card, x, y, L.cw, L.ch, { lift: true }); });
+        if (under.length > 1) drawCard(ctx, under[under.length - 2], wp.x - 3, wp.y + 2, L.bw, L.bh);
+        if (under.length) drawCard(ctx, under[under.length - 1], wp.x, wp.y, L.bw, L.bh);
+        anims.forEach(a => { const k = BA.ease.out(Math.min(1, a.t)); const x = lerp(a.fx, wp.x, k), y = lerp(a.fy, wp.y, k) - Math.sin(k * Math.PI) * 30; const cw = lerp(a.fw || L.cw, L.bw, k); drawCard(ctx, a.card, x, y, cw, cw * 1.4, { lift: true }); });
         // tableau count
         const rem = st.cols.reduce((a, c) => a + c.length, 0);
         ctx.fillStyle = 'rgba(245,237,225,.75)'; ctx.font = `700 13px ${BA.FONT_UI}`; ctx.textAlign = 'center';
-        ctx.fillText(`${rem} bale${rem === 1 ? '' : 's'} to clear · play ${T.wrap ? 'one up or down (K↔A wraps)' : 'one up or down'}`, w / 2, wp.y + L.ch + 18 + (left > 0 ? 18 : 0));
-        if (streak >= 3) { ctx.fillStyle = '#f2d27c'; ctx.font = `800 ${16 + Math.min(10, streak)}px ${BA.FONT_DISPLAY || BA.FONT_UI}`; ctx.fillText(`×${streak}`, wp.x + L.cw + 30, wp.y + L.ch / 2); }
+        ctx.fillText(`${rem} bale${rem === 1 ? '' : 's'} to clear · play ${T.wrap ? 'one up or down (K↔A wraps)' : 'one up or down'}`, w / 2, wp.y + L.bh + 19 + (left > 0 ? 20 : 0));
+        if (streak >= 3) { ctx.fillStyle = '#f2d27c'; ctx.font = `800 ${16 + Math.min(10, streak)}px ${BA.FONT_DISPLAY || BA.FONT_UI}`; ctx.fillText(`×${streak}`, Math.min(w - 24, wp.x + L.bw + 26), wp.y + L.bh / 2); }
       },
     };
   },
@@ -10436,7 +10496,9 @@ BA.jobs.register({
     // touch gestures on board
     let tp = null;
     return {
-      pad: [{ id: 'hold', icon: 'hold', label: 'Hold' }, { id: 'left', icon: 'left', label: 'Left' }, { id: 'rot', icon: 'rot', label: 'Rotate' }, { id: 'right', icon: 'right', label: 'Right' }, { id: 'down', icon: 'down', label: 'Soft drop' }, { id: 'drop', icon: 'drop', label: 'Drop' }],
+      // four big labelled buttons; the board itself also takes gestures (drag to move, tap to turn, flick down to drop)
+      _cur: () => cur && { k: cur.k, r: cur.r, x: cur.x, y: cur.y }, _filled: () => grid.flat().filter(Boolean).length, _hold: () => hold,
+      pad: [{ id: 'left', icon: 'left', label: 'Left', cap: 1 }, { id: 'rot', icon: 'rot', label: 'Turn', cap: 1 }, { id: 'right', icon: 'right', label: 'Right', cap: 1 }, { id: 'drop', icon: 'drop', label: 'Drop', cap: 1 }],
       padPress(id, down) {
         if (!cur) return;
         if (id === 'left' || id === 'right') { const d = id === 'left' ? -1 : 1; if (down) { move(d); das.dir = d; das.t = -.17; } else if (das.dir === d) das.dir = 0; }
@@ -10455,17 +10517,40 @@ BA.jobs.register({
       },
       pointer(type, x, y) {
         if (!cur) return;
-        if (type === 'down') tp = { x, y, sx: x, sy: y, moved: 0, t: performance.now() };
-        else if (type === 'move' && tp) {
-          const dx = x - tp.x;
-          if (Math.abs(dx) > L.s * .9) { move(Math.sign(dx)); tp.x = x; tp.moved++; }
-          if (y - tp.sy > L.s * 3 && Math.abs(x - tp.sx) < L.s * 2 && !tp.dropped) { tp.dropped = true; hardDrop(); }
-        } else if (type === 'up' && tp) { if (!tp.moved && !tp.dropped && Math.hypot(x - tp.sx, y - tp.sy) < 12) rotate(1); tp = null; }
+        const now = performance.now();
+        if (type === 'down') {
+          // tapping the HOLD box swaps the piece
+          if (L.hold && x >= L.hold.x && x <= L.hold.x + L.hold.w && y >= L.hold.y && y <= L.hold.y + L.hold.h) { doHold(); tp = null; return; }
+          tp = { x, y, sx: x, sy: y, moved: 0, down: 0, t: now, hist: [[now, y]] };
+        } else if (type === 'move' && tp) {
+          tp.hist.push([now, y]); while (tp.hist.length > 2 && now - tp.hist[0][0] > 90) tp.hist.shift();
+          const step = L.s * .8, dx = x - tp.x, dy = y - tp.y;
+          // the piece follows the finger sideways, one column per step
+          if (!tp.down && Math.abs(dx) > step) { const n = Math.trunc(dx / step); for (let i = 0; i < Math.abs(n); i++) move(Math.sign(n)); tp.x += n * step; tp.moved++; }
+          // a slow drag downward eases the piece down a row at a time
+          if (dy > step * 1.2 && Math.abs(x - tp.sx) < Math.abs(y - tp.sy)) { const n = Math.floor(dy / (step * 1.2)); for (let i = 0; i < n; i++) if (fits({ ...cur, y: cur.y + 1 })) { cur.y++; fall = 0; } tp.y += n * step * 1.2; tp.down++; api.sfx.tick(); }
+        } else if (type === 'up' && tp) {
+          const h0 = tp.hist[0], vy = (y - h0[1]) / Math.max(16, now - h0[0]); // px per ms
+          const dist = Math.hypot(x - tp.sx, y - tp.sy);
+          if (vy > .9 && y - tp.sy > L.s * 1.5) hardDrop(); // a quick flick down drops it
+          else if (!tp.moved && !tp.down && dist < 14 && now - tp.t < 350) rotate(1);
+          tp = null;
+        }
       },
       resize(w, h) {
-        const padH = BA.isTouch ? 100 : 20;
-        const s = Math.floor(Math.min((h - 90 - padH) / ROWS, (w - 40) / (COLS + 9)));
-        L = { s, ox: Math.round(w / 2 - COLS * s / 2), oy: 76 };
+        const touch = BA.isTouch, narrow = w < 640;
+        if (narrow) {
+          // phones: a slim strip of NEXT / HOLD / ROWS above a board that fills the width
+          const strip = 58, padH = touch ? 112 : 30, top = 70;
+          const s = Math.floor(Math.min((h - top - strip - padH) / ROWS, (w - 24) / COLS));
+          const ox = Math.round(w / 2 - COLS * s / 2), oy = top + strip;
+          L = { s, ox, oy, narrow: true, strip: { y: top, h: strip - 8 } };
+          const hw = Math.round(COLS * s * .22); L.hold = { x: ox - 6, y: top - 6, w: hw + 12, h: strip - 8 + 12 };
+        } else {
+          const padH = touch ? 100 : 20;
+          const s = Math.floor(Math.min((h - 90 - padH) / ROWS, (w - 40) / (COLS + 9)));
+          L = { s, ox: Math.round(w / 2 - COLS * s / 2), oy: 76 };
+        }
       },
       update(dt, playing) {
         parts.forEach(p => { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; }); parts = parts.filter(p => p.life < 1.2);
@@ -10484,7 +10569,7 @@ BA.jobs.register({
         const { s, ox } = L, oy = L.oy + (shakeT > 0 ? Math.sin(shakeT * 120) * 3 : 0);
         // board: a walnut frame with a dark bed
         BA.jobs.tray(ctx, ox - 4, oy - 4, COLS * s + 8, ROWS * s + 8, 'walnut', { r: 8, lip: 12 });
-        { const side = Math.max(54, s * 3.4); BA.jobs.tray(ctx, ox + COLS * s + 14, oy - 4, side, s * 10.5, 'walnut', { r: 10, lip: 7 }); BA.jobs.tray(ctx, ox - 14 - side, oy - 4, side, s * 4, 'walnut', { r: 10, lip: 7 }); BA.jobs.tray(ctx, ox - 14 - side, oy + ROWS * s - 84, side, 88, 'walnut', { r: 10, lip: 7 }); }
+        if (!L.narrow) { const side = Math.max(54, s * 3.4); BA.jobs.tray(ctx, ox + COLS * s + 14, oy - 4, side, s * 10.5, 'walnut', { r: 10, lip: 7 }); BA.jobs.tray(ctx, ox - 14 - side, oy - 4, side, s * 4, 'walnut', { r: 10, lip: 7 }); BA.jobs.tray(ctx, ox - 14 - side, oy + ROWS * s - 84, side, 88, 'walnut', { r: 10, lip: 7 }); }
         ctx.strokeStyle = 'rgba(255,240,210,.05)'; ctx.lineWidth = 1;
         for (let x = 1; x < COLS; x++) { ctx.beginPath(); ctx.moveTo(ox + x * s, oy); ctx.lineTo(ox + x * s, oy + ROWS * s); ctx.stroke(); }
         for (let y = 1; y < ROWS; y++) { ctx.beginPath(); ctx.moveTo(ox, oy + y * s); ctx.lineTo(ox + COLS * s, oy + y * s); ctx.stroke(); }
@@ -10498,6 +10583,25 @@ BA.jobs.register({
         parts.forEach(p => { ctx.fillStyle = rgba(p.c, 1 - p.life / 1.2); ctx.fillRect(p.x, p.y, 3, 2); });
         // side panels: next, hold, progress
         const mini = (k, x, y, sz) => { if (!k) return; const c = SHAPES[k]; const minX = Math.min(...c.map(p => p[0])), maxX = Math.max(...c.map(p => p[0])), minY = Math.min(...c.map(p => p[1])), maxY = Math.max(...c.map(p => p[1])); const offX = x - (maxX - minX + 1) * sz / 2, offY = y - (maxY - minY + 1) * sz / 2; c.forEach(([cx, cy]) => ctx.drawImage(block(k, sz), offX + (cx - minX) * sz, offY + (cy - minY) * sz, sz, sz)); };
+        if (L.narrow) {
+          const sy = L.strip.y, sh = L.strip.h, bw = COLS * s, sz = Math.max(8, Math.round(sh * .2));
+          const hw = Math.round(bw * .22), nw = Math.round(bw * .46), rw2 = bw - hw - nw - 12;
+          BA.jobs.tray(ctx, ox, sy, hw, sh, 'walnut', { r: 10, lip: 5 });
+          BA.jobs.tray(ctx, ox + hw + 6, sy, nw, sh, 'walnut', { r: 10, lip: 5 });
+          BA.jobs.tray(ctx, ox + hw + nw + 12, sy, rw2, sh, 'walnut', { r: 10, lip: 5 });
+          ctx.fillStyle = 'rgba(245,237,225,.7)'; ctx.font = `800 10px ${BA.FONT_UI}`; ctx.textAlign = 'center';
+          ctx.fillText(canHold ? 'HOLD · tap' : 'HOLD', ox + hw / 2, sy + 13);
+          ctx.fillText('NEXT', ox + hw + 6 + nw / 2, sy + 13);
+          ctx.fillText('ROWS', ox + hw + nw + 12 + rw2 / 2, sy + 13);
+          mini(hold, ox + hw / 2, sy + sh * .62, sz);
+          queue.slice(0, 3).forEach((k, i) => mini(k, ox + hw + 6 + nw * (i * 2 + 1) / 6, sy + sh * .62, i ? sz * .8 : sz));
+          const pct = Math.min(1, lines / T.lines), rx2 = ox + hw + nw + 12;
+          ctx.font = `800 18px ${BA.FONT_UI}`; ctx.fillStyle = '#f5ede1'; ctx.fillText(`${lines}/${T.lines}`, rx2 + rw2 / 2, sy + sh * .66);
+          ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(ctx, rx2 + 8, sy + sh - 11, rw2 - 16, 5, 3); ctx.fill();
+          ctx.fillStyle = '#e9b949'; rr(ctx, rx2 + 8, sy + sh - 11, (rw2 - 16) * pct, 5, 3); ctx.fill();
+          if (BA.isTouch && lines === 0 && api.t < 12) { const a = Math.min(1, (12 - api.t) / 2), ty = oy + ROWS * s * .42; ctx.globalAlpha = a; ctx.fillStyle = 'rgba(20,14,10,.6)'; rr(ctx, ox + 10, ty - 19, bw - 20, 28, 14); ctx.fill(); ctx.fillStyle = 'rgba(245,237,225,.92)'; ctx.font = `700 12px ${BA.FONT_UI}`; ctx.fillText('Drag to move · tap to turn · flick down to drop', ox + bw / 2, ty); ctx.globalAlpha = 1; }
+          return;
+        }
         const side = Math.max(54, s * 3.4), sz = Math.max(10, Math.round(s * .62));
         ctx.fillStyle = 'rgba(245,237,225,.7)'; ctx.font = `800 11px ${BA.FONT_UI}`; ctx.textAlign = 'center';
         const rx = ox + COLS * s + 14 + side / 2, lx = ox - 14 - side / 2;
@@ -10573,7 +10677,7 @@ BA.jobs.register({
     }
     flow();
     return {
-      resize(w, h) { const s = Math.floor(Math.min((w - 60) / n, (h - 170) / n, 100)); L = { s, ox: Math.round(w / 2 - n * s / 2), oy: Math.round(Math.max(90, h / 2 - n * s / 2 + 20)) }; },
+      resize(w, h) { const s = Math.floor(Math.min((w - (w < 600 ? 36 : 60)) / n, (h - 170) / n, 100)); L = { s, ox: Math.round(w / 2 - n * s / 2), oy: Math.round(Math.max(90, h / 2 - n * s / 2 + 20)) }; },
       hint() { const c = cur(); for (let i = 0; i < n * n; i++) { if (c[i] !== sol[i] && sol[i] !== 15 && !(sol[i] === (N | S) && c[i] === (N | S)) && !(sol[i] === (E | Wd) && c[i] === (E | Wd))) { rotState[i] = 0; anim[i] = -1; hintCell = i; hintT = 1.5; flow(); return true; } } return false; },
       pointer(type, x, y, e) {
         if (type !== 'down' || solved) return;
@@ -10733,7 +10837,7 @@ BA.jobs.register({
       if (e === c) { check(); }
     }
     return {
-      resize(w, h) { const s = Math.floor(Math.min((w - 56) / n, (h - 180) / n, 96)); L = { s, ox: Math.round(w / 2 - n * s / 2), oy: Math.round(Math.max(92, h / 2 - n * s / 2 + 10)) }; },
+      resize(w, h) { const s = Math.floor(Math.min((w - (w < 600 ? 36 : 56)) / n, (h - 180) / n, 96)); L = { s, ox: Math.round(w / 2 - n * s / 2), oy: Math.round(Math.max(92, h / 2 - n * s / 2 + 10)) }; },
       hint() {
         const c = sol.findIndex((_, i) => !doneSet.has(i)); if (c < 0) return false;
         const own = owner(); sol[c].forEach(([x, y]) => { const o = own.get(y * n + x); if (o != null && o !== c) { const q = paths[o]; const j = q.findIndex(r => r[0] === x && r[1] === y); q.length = Math.max(0, j); } });
@@ -11154,7 +11258,7 @@ BA.jobs.register({
     function set(i, v) { if (g[i] === v) return false; g[i] = v; return true; }
     return {
       resize(w, h) {
-        const s = Math.floor(Math.min((w - 40) / (n + cw * .62), (h - 250) / (n + ch * .62), 62));
+        const s = Math.floor(Math.min((w - (w < 600 ? 24 : 40)) / (n + cw * .62), (h - 250) / (n + ch * .62), 62));
         const cs = s * .62, gw = n * s + cw * cs;
         L = { s, cs, ox: Math.round(w / 2 - gw / 2 + cw * cs), oy: Math.round(Math.max(96 + ch * cs, (h - 70) / 2 - (n * s - ch * cs) / 2)) };
         L.by = L.oy + n * s + 20;
@@ -11205,7 +11309,7 @@ BA.jobs.register({
         ctx.fillStyle = '#f4ecdc'; rr(ctx, px, py, pw, ph, 6); ctx.fill(); ctx.restore();
         ctx.fillStyle = vgrad(ctx, py, py + ph, ['rgba(255,255,255,.25)', 'rgba(120,90,50,.08)']); rr(ctx, px, py, pw, ph, 6); ctx.fill();
         [[px + 10, py + 10, '#c4553c'], [px + pw - 10, py + 10, '#2f5d9a']].forEach(([x, y, c]) => { ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.arc(x + 2, y + 3, 5, 0, 7); ctx.fill(); ctx.fillStyle = BA.rgrad(ctx, x - 1.5, y - 1.5, .5, 6, [BA.shade(c, .4), c, BA.shade(c, -.3)]); ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); });
-        const fs = Math.round(Math.min(cs * .78, s * .48));
+        const fs = Math.round(Math.min(cs * .92, s * .56));
         ctx.font = `800 ${fs}px ${BA.FONT_UI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         for (let i = 0; i < n; i++) {
           const ok = rowOK(i); if (i % 2 === 0) { ctx.fillStyle = 'rgba(166,58,44,.05)'; ctx.fillRect(px + 4, oy + i * s, cw * cs + 4, s); }
@@ -11318,7 +11422,7 @@ BA.jobs.register({
     function win() { solved = true; api.sfx.whoosh(); const dy = L.oy + ROW * L.s + L.s / 2; api.fx.burst(L.ox + 6 * L.s + 20, dy, { kind: 'dust', n: 16, col: '#e8d9bd', h: L.s }); api.fx.kick(4); setTimeout(() => api.win(), 700); }
     const pieceAt = (cx, cy) => P.findIndex(p => p.h ? (cy === p.fix && cx >= p.pos && cx < p.pos + p.len) : (cx === p.fix && cy >= p.pos && cy < p.pos + p.len));
     return {
-      resize(w, h) { const s = Math.floor(Math.min((w - 100) / 6, (h - 220) / 6, 92)); L = { s, ox: Math.round(w / 2 - 3 * s - 12), oy: Math.round(Math.max(96, h / 2 - 3 * s + 6)) }; },
+      resize(w, h) { const s = Math.floor(Math.min((w - (w < 600 ? 60 : 100)) / 6, (h - 220) / 6, 92)); L = { s, ox: Math.round(w / 2 - 3 * s - 12), oy: Math.round(Math.max(96, h / 2 - 3 * s + 6)) }; },
       undo() { if (!hist.length || solved) return; const st = hist.pop(); P.forEach((p, i) => p.pos = st[i]); moves = Math.max(0, moves - 1); api.sfx.tap(); },
       hint() {
         if (solved) return false; const path = solve(P); if (!path || !path.length) return false;
@@ -11610,7 +11714,7 @@ BA.story = {
     BA.state.introDone = true; BA.state.time = .38; S.fitDefault();
     BA.ui.refresh(); BA.save(); BA.checkUnlocks();
     BA.people.say('mae', 'Tap a junk pile to haul it out. Money\'s tight? Hit the Jobs board.', 7);
-    setTimeout(() => BA.ui.toast(BA.isTouch ? 'Drag to spin around the barn. Pinch to zoom.' : 'Drag to spin around the barn. Scroll to zoom.'), 1800);
+    setTimeout(() => !BA.jobs.active && BA.ui.toast(BA.isTouch ? 'Drag to spin around the barn. Pinch to zoom.' : 'Drag to spin around the barn. Scroll to zoom.'), 1800);
   },
 };
 
