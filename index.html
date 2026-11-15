@@ -6803,7 +6803,7 @@ G.init = function (canvas) {
   const sc = G.scene = new T.Scene();
   sc.fog = new T.Fog('#cfd8dc', 2600, 7600);
   const pm = new T.PMREMGenerator(r); sc.environment = pm.fromScene(new T.RoomEnvironment(), .04).texture; sc.environmentIntensity = .35;
-  G.camera = new T.PerspectiveCamera(36, 1, 20, 14000);
+  G.camera = new T.PerspectiveCamera(36, 1, 30, 14000);
   G.root = new T.Group(); sc.add(G.root);
   buildSky(); buildLights(); buildLand(); buildFx();
   G.overlay = document.getElementById('ov3');
@@ -6865,7 +6865,7 @@ function buildLights() {
   const sun = G.sun = new T.DirectionalLight('#fff2d8', 2.6);
   sun.castShadow = true; sun.shadow.mapSize.set(BA.isTouch ? 1536 : 2560, BA.isTouch ? 1536 : 2560);
   const c = sun.shadow.camera; c.left = -1100; c.right = 1100; c.top = 1100; c.bottom = -1100; c.near = 100; c.far = 5000;
-  sun.shadow.bias = -.0004; sun.shadow.normalBias = 1.2; sun.shadow.radius = 4;
+  sun.shadow.bias = -.0004; sun.shadow.normalBias = BA.isTouch ? 2 : 1.4; sun.shadow.radius = 4;
   sc.add(sun); sc.add(sun.target);
   G.moon = new T.DirectionalLight('#9fb4e8', 0); sc.add(G.moon); sc.add(G.moon.target);
   // pooled point lights for lamps (assigned to the most relevant lamps each frame)
@@ -7429,7 +7429,7 @@ function build(s, root) {
         for (const sg of run.segs) { if (cur && Math.abs(sg.a0 - cur.a1) < .5) { cur.a1 = sg.a1; cur.segs.push(sg); } else { cur = { a0: sg.a0, a1: sg.a1, segs: [sg] }; pieces.push(cur); } }
         const f = run.f, sign = f[0] === '+' ? 1 : -1, ax = f[1];
         for (const pc of pieces) {
-          const off = run.ext ? .4 : 3.5, fixed = run.line + sign * off;
+          const off = run.ext ? 1.2 : 3.5, fixed = run.line + sign * off;
           const holes = pc.segs.filter(sg => sg.v === 2).map(sg => ({ a0: (sg.a0 + sg.a1) / 2 - 17, a1: (sg.a0 + sg.a1) / 2 + 17, y0: 0, y1: 104 }));
           let side = null;
           if (run.ext) { side = ax === 'z' ? (sign > 0 ? 'back' : 'front') : (sign > 0 ? 'left' : 'right'); B.extHoles(s, lv, side).forEach(h => holes.push(h)); }
@@ -7448,7 +7448,7 @@ function build(s, root) {
           // baseboard where the finish has one
           if (!['barnwood', 'stone', 'reclaimed', 'brick'].includes(fin.kind)) {
             const bm = K.P.paint(fin.trim || '#efe9df'), cut = holes.filter(hh => hh.y0 < 8);
-            let a = pc.a0; [...cut.sort((p, q) => p.a0 - q.a0), { a0: pc.a1, a1: pc.a1 }].forEach(hh => { const b = Math.min(hh.a0, pc.a1); if (b - a > 2) { const cx = (a + b) / 2, l = b - a; const bx = ax === 'z' ? K.box(grp, l, 7, 1.6, bm, cx, y, fixed + sign * .8) : K.box(grp, 1.6, 7, l, bm, fixed + sign * .8, y, cx); } a = Math.max(a, hh.a1); });
+            let a = pc.a0; [...cut.sort((p, q) => p.a0 - q.a0), { a0: pc.a1, a1: pc.a1 }].forEach(hh => { const b = Math.min(hh.a0, pc.a1); if (b - a > 2) { const cx = (a + b) / 2, l = b - a; const bx = ax === 'z' ? K.box(grp, l, 7, 1.6, bm, cx, y, fixed + sign * 1.1) : K.box(grp, 1.6, 7, l, bm, fixed + sign * 1.1, y, cx); } a = Math.max(a, hh.a1); });
           }
         }
       }
@@ -7458,12 +7458,12 @@ function build(s, root) {
     const coreFor = (k, i, j, v) => {
       const sg = BA.edgeSeg(lv, k, i, j), along0 = k === 'x' ? sg.z0 : sg.x0, along1 = k === 'x' ? sg.z1 : sg.x1, line = k === 'x' ? sg.x0 : sg.z0;
       const h = k === 'x' ? top(line) : Math.min(top(along0), top(along1)), g = coreG[k];
-      const piece = (a0, a1, y0, y1) => { const l = a1 - a0, c = (a0 + a1) / 2; if (k === 'x') K.box(g, 7, y1 - y0, l, coreM, line, y + y0, c); else K.box(g, l, y1 - y0, 7, coreM, c, y + y0, line); };
-      const ext0 = along0 - 3.5, ext1 = along1 + 3.5;
+      const piece = (a0, a1, y0, y1) => { const l = a1 - a0, c = (a0 + a1) / 2; if (k === 'x') K.box(g, 5.4, y1 - y0, l, coreM, line, y + y0, c); else K.box(g, l, y1 - y0, 5.4, coreM, c, y + y0, line); };
+      const ext0 = along0 - 2.7, ext1 = along1 + 2.7;
       if (v === 2) {
         const mid = (along0 + along1) / 2; piece(ext0, mid - 17, 0, h); piece(mid + 17, ext1, 0, h); piece(mid - 17, mid + 17, 104, h);
         // door casing on both faces
-        [-1, 1].forEach(sd => { const o = line + sd * 4.2; if (k === 'x') { K.box(g, 1.6, 104, 3, caseM, o, y, mid - 18.5); K.box(g, 1.6, 104, 3, caseM, o, y, mid + 18.5); K.box(g, 1.6, 3, 40, caseM, o, y + 104, mid); } else { K.box(g, 3, 104, 1.6, caseM, mid - 18.5, y, o); K.box(g, 3, 104, 1.6, caseM, mid + 18.5, y, o); K.box(g, 40, 3, 1.6, caseM, mid, y + 104, o); } });
+        [-1, 1].forEach(sd => { const o = line + sd * 4.6; if (k === 'x') { K.box(g, 1.6, 104, 3, caseM, o, y, mid - 18.5); K.box(g, 1.6, 104, 3, caseM, o, y, mid + 18.5); K.box(g, 1.6, 3, 40, caseM, o, y + 104, mid); } else { K.box(g, 3, 104, 1.6, caseM, mid - 18.5, y, o); K.box(g, 3, 104, 1.6, caseM, mid + 18.5, y, o); K.box(g, 40, 3, 1.6, caseM, mid, y + 104, o); } });
       } else piece(ext0, ext1, 0, h);
     };
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx - 1; i++) { const v = BA.edgeVal(d, 'x', i, j); if (v) coreFor('x', i, j, v); }
